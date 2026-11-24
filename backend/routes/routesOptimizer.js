@@ -191,10 +191,25 @@ router.get('/latest', (req, res) => {
       CENTRAL_PWMU_DEPOT
     ];
 
+    const distance_saved_km = Number((latestRoute.baseline_static_distance_km - latestRoute.total_distance_km).toFixed(1));
+    const fuel_savings_liters = Number((distance_saved_km / 4.5).toFixed(1));
+
+    const metrics = {
+      total_distance_km: latestRoute.total_distance_km,
+      estimated_fuel_liters: latestRoute.estimated_fuel_liters,
+      estimated_fuel_cost_inr: latestRoute.estimated_fuel_cost_inr,
+      baseline_static_distance_km: latestRoute.baseline_static_distance_km,
+      distance_saved_km,
+      fuel_savings_liters,
+      fuel_savings_inr: latestRoute.fuel_savings_inr,
+      co2_savings_kg: latestRoute.co2_savings_kg
+    };
+
     res.json({
       success: true,
       data: {
         ...latestRoute,
+        metrics,
         stops,
         tour
       }
@@ -253,6 +268,53 @@ router.get('/:id/manifest', (req, res) => {
   } catch (error) {
     console.error('[API Error] Failed to generate manifest:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/routes/:id/complete
+ * Marks a collection route as completed, empties the collected village sheds down to 10-15%,
+ * and updates route status to 'COMPLETED'.
+ */
+router.post('/:id/complete', (req, res) => {
+  try {
+    const { id } = req.params;
+    const route = db.prepare('SELECT * FROM collection_routes WHERE id = ?').get(id);
+    if (!route) {
+      return res.status(404).json({ success: false, message: 'Route not found' });
+    }
+
+    const stops = db.prepare('SELECT * FROM collection_route_stops WHERE route_id = ?').all(id);
+
+    const completeTx = db.transaction(() => {
+      // Mark route completed
+      db.prepare("UPDATE collection_routes SET status = 'COMPLETED' WHERE id = ?").run(id);
+
+      // Mark stops collected
+      db.prepare("UPDATE collection_route_stops SET collection_status = 'COLLECTED' WHERE route_id = ?").run(id);
+
+      // Reset village shed fill percentages to cleared baseline (8-15%)
+      const now = new Date().toISOString();
+      for (const stop of stops) {
+        const resetFill = Math.round(8 + Math.random() * 7);
+        db.prepare('UPDATE villages SET current_fill_percent = ?, last_updated_at = ? WHERE id = ?').run(
+          resetFill,
+          now,
+          stop.village_id
+        );
+      }
+    });
+
+    completeTx();
+
+    res.json({
+      success: true,
+      message: `Collection route ${id} marked as COMPLETED! ${stops.length} village sheds successfully emptied.`,
+      route_id: id
+    });
+  } catch (error) {
+    console.error('[API Error] Failed to complete route:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

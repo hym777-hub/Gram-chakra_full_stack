@@ -9,11 +9,12 @@
  *   - Offline-First: If browser is offline or "Simulate Offline Mode" is toggled,
  *     waste logs are queued directly in browser IndexedDB.
  *   - Auto Sync: When online, flushes queued entries with idempotent UUIDs.
- *   - Immediate Feedback: Updates shed fill levels and segregation weights.
+ *   - Quick-Fill Presets: Enables instant 1-click test data generation.
+ *   - Real-time Log Manifest: Live audit table of recent submissions.
  * ============================================================================
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Scale,
   CloudOff,
@@ -23,7 +24,12 @@ import {
   MapPin,
   Send,
   User,
-  Clock
+  Clock,
+  Sparkles,
+  FileSpreadsheet,
+  Filter,
+  Search,
+  RefreshCw
 } from 'lucide-react';
 import { enqueueWasteLog, generateSyncId } from '../../utils/offlineQueue';
 
@@ -38,14 +44,79 @@ export default function WasteLoggerView({
 
   const [selectedVillageId, setSelectedVillageId] = useState(villages[0]?.id || 'VIL_01');
   const [fillPercent, setFillPercent] = useState(85);
-  const [wetKg, setWetKg] = useState('');
-  const [dryKg, setDryKg] = useState('');
-  const [mlPkg, setMlPkg] = useState('');
-  const [sanitaryKg, setSanitaryKg] = useState('');
+  const [wetKg, setWetKg] = useState('52.0');
+  const [dryKg, setDryKg] = useState('31.5');
+  const [mlPkg, setMlPkg] = useState('24.0');
+  const [sanitaryKg, setSanitaryKg] = useState('6.5');
   const [loggedBy, setLoggedBy] = useState('Ramesh Sharma (Swachhata Doot)');
 
   const [statusMessage, setStatusMessage] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Recent Logs Audit Table State
+  const [recentLogs, setRecentLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [filterVillage, setFilterVillage] = useState('ALL');
+  const [searchDoot, setSearchDoot] = useState('');
+
+  // Update selected village when list loads
+  useEffect(() => {
+    if (villages.length > 0 && !villages.some((v) => v.id === selectedVillageId)) {
+      setSelectedVillageId(villages[0].id);
+    }
+  }, [villages]);
+
+  // Fetch recent logs
+  const fetchRecentLogs = async () => {
+    try {
+      setLogsLoading(true);
+      const res = await fetch('/api/waste-logs');
+      const data = await res.json();
+      if (data.success) {
+        setRecentLogs(data.data || []);
+      }
+    } catch (e) {
+      console.warn('Could not fetch recent logs:', e);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentLogs();
+  }, []);
+
+  // Demo Quick-Fill Presets
+  const applyPreset = (type) => {
+    if (type === 'CRITICAL_PEAK') {
+      const v = villages.find((item) => item.current_fill_percent >= 75) || villages[0];
+      if (v) setSelectedVillageId(v.id);
+      setFillPercent(88);
+      setWetKg('68.5');
+      setDryKg('36.0');
+      setMlPkg('32.5');
+      setSanitaryKg('8.0');
+      setLoggedBy('Ramesh Sharma (Swachhata Doot)');
+    } else if (type === 'NORMAL_ROUTINE') {
+      const v = villages.find((item) => item.current_fill_percent < 50) || villages[1];
+      if (v) setSelectedVillageId(v.id);
+      setFillPercent(42);
+      setWetKg('34.0');
+      setDryKg('18.5');
+      setMlPkg('12.0');
+      setSanitaryKg('4.0');
+      setLoggedBy('Anita Bai (SHG Lead)');
+    } else if (type === 'EMERGENCY_OVERFLOW') {
+      const v = villages[0];
+      if (v) setSelectedVillageId(v.id);
+      setFillPercent(95);
+      setWetKg('85.0');
+      setDryKg('48.0');
+      setMlPkg('44.5');
+      setSanitaryKg('12.0');
+      setLoggedBy('Suresh Patel (VLE Field Officer)');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -65,7 +136,7 @@ export default function WasteLoggerView({
       mlp_waste_kg: Number(mlPkg) || 0,
       sanitary_hazardous_kg: Number(sanitaryKg) || 0,
       recorded_fill_percent: Number(fillPercent),
-      logged_by: loggedBy,
+      logged_by: loggedBy || 'Swachhata Doot',
       recorded_at: new Date().toISOString()
     };
 
@@ -75,7 +146,7 @@ export default function WasteLoggerView({
         await enqueueWasteLog(payload);
         setStatusMessage({
           type: 'offline',
-          text: `Log safely buffered in local IndexedDB offline queue (${payload.client_sync_id.substring(0, 8)}...). Will auto-flush upon reconnection.`
+          text: `Log safely buffered in local IndexedDB offline queue (Sync ID: ${payload.client_sync_id.substring(0, 8)}...). Will auto-flush upon reconnection.`
         });
         if (onQueueUpdated) onQueueUpdated();
       } else {
@@ -95,11 +166,8 @@ export default function WasteLoggerView({
         if (onLogSaved) onLogSaved();
       }
 
-      // Reset numeric inputs
-      setWetKg('');
-      setDryKg('');
-      setMlPkg('');
-      setSanitaryKg('');
+      // Refresh log table
+      fetchRecentLogs();
     } catch (err) {
       console.error('Submission error:', err);
       setStatusMessage({
@@ -111,10 +179,15 @@ export default function WasteLoggerView({
     }
   };
 
-  const selectedVillage = villages.find((v) => v.id === selectedVillageId);
+  // Filtered recent logs
+  const filteredLogs = recentLogs.filter((log) => {
+    const matchesVillage = filterVillage === 'ALL' || log.village_id === filterVillage;
+    const matchesSearch = !searchDoot || log.logged_by?.toLowerCase().includes(searchDoot.toLowerCase()) || log.village_name?.toLowerCase().includes(searchDoot.toLowerCase());
+    return matchesVillage && matchesSearch;
+  });
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Header Banner */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -143,6 +216,41 @@ export default function WasteLoggerView({
               <span>Online (Direct Server Sync)</span>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Demo Preset Quick-Fill Bar */}
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center space-x-2">
+          <Sparkles className="h-4 w-4 text-amber-300" />
+          <div>
+            <span className="text-xs font-bold text-white block">Presentation Demo Presets:</span>
+            <span className="text-[10px] text-slate-400">1-click populate realistic field weights and fill levels</span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => applyPreset('CRITICAL_PEAK')}
+            className="px-2.5 py-1 bg-red-600/80 hover:bg-red-600 text-white rounded text-xs font-medium transition"
+          >
+            🚨 88% Peak Shed
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset('NORMAL_ROUTINE')}
+            className="px-2.5 py-1 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded text-xs font-medium transition"
+          >
+            🌿 42% Routine Shed
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset('EMERGENCY_OVERFLOW')}
+            className="px-2.5 py-1 bg-amber-600/80 hover:bg-amber-600 text-white rounded text-xs font-medium transition"
+          >
+            ⚡ 95% Overflow Shed
+          </button>
         </div>
       </div>
 
@@ -199,6 +307,7 @@ export default function WasteLoggerView({
                 onChange={(e) => setLoggedBy(e.target.value)}
                 className="w-full text-xs font-medium border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 placeholder="Name of Swachhata Doot"
+                required
               />
             </div>
           </div>
@@ -257,6 +366,7 @@ export default function WasteLoggerView({
                   onChange={(e) => setWetKg(e.target.value)}
                   placeholder="0.0 kg"
                   className="w-full text-base font-bold bg-white border border-emerald-300 rounded-lg p-2 text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  required
                 />
                 <div className="text-[10px] text-emerald-700 mt-1">Compostable food & leaves</div>
               </div>
@@ -275,6 +385,7 @@ export default function WasteLoggerView({
                   onChange={(e) => setDryKg(e.target.value)}
                   placeholder="0.0 kg"
                   className="w-full text-base font-bold bg-white border border-blue-300 rounded-lg p-2 text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  required
                 />
                 <div className="text-[10px] text-blue-700 mt-1">PET, paper, glass, cans</div>
               </div>
@@ -293,6 +404,7 @@ export default function WasteLoggerView({
                   onChange={(e) => setMlPkg(e.target.value)}
                   placeholder="0.0 kg"
                   className="w-full text-base font-bold bg-white border border-amber-400 rounded-lg p-2 text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  required
                 />
                 <div className="text-[10px] text-amber-800 mt-1 font-medium">Chips, sachets, foils</div>
               </div>
@@ -311,6 +423,7 @@ export default function WasteLoggerView({
                   onChange={(e) => setSanitaryKg(e.target.value)}
                   placeholder="0.0 kg"
                   className="w-full text-base font-bold bg-white border border-red-300 rounded-lg p-2 text-slate-900 focus:ring-2 focus:ring-red-500 focus:outline-none"
+                  required
                 />
                 <div className="text-[10px] text-red-700 mt-1">Diapers, pesticide tins</div>
               </div>
@@ -337,6 +450,121 @@ export default function WasteLoggerView({
           </button>
         </div>
       </form>
+
+      {/* Live Logged Waste Manifest & Shed History Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center space-x-2">
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+            <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
+              Recent 4-Stream Waste Logs Manifest ({filteredLogs.length} Records)
+            </h4>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {/* Village Filter */}
+            <select
+              value={filterVillage}
+              onChange={(e) => setFilterVillage(e.target.value)}
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none"
+            >
+              <option value="ALL">All Villages</option>
+              {villages.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Doot Search */}
+            <input
+              type="text"
+              placeholder="Search Doot..."
+              value={searchDoot}
+              onChange={(e) => setSearchDoot(e.target.value)}
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none"
+            />
+
+            <button
+              onClick={fetchRecentLogs}
+              disabled={logsLoading}
+              className="p-1.5 text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded-lg"
+              title="Refresh logs"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${logsLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto max-h-80 overflow-y-auto">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px] sticky top-0 z-10">
+              <tr>
+                <th className="py-2.5 px-4">Date / Time</th>
+                <th className="py-2.5 px-4">Village Shed</th>
+                <th className="py-2.5 px-4">Logged By</th>
+                <th className="py-2.5 px-3 text-right">Wet (kg)</th>
+                <th className="py-2.5 px-3 text-right">Dry (kg)</th>
+                <th className="py-2.5 px-3 text-right">MLP (kg)</th>
+                <th className="py-2.5 px-3 text-right">Sanitary</th>
+                <th className="py-2.5 px-3 text-center">Shed Fill</th>
+                <th className="py-2.5 px-4 text-right">Sync Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredLogs.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="py-8 text-center text-slate-400">
+                    No matching waste collection logs found.
+                  </td>
+                </tr>
+              ) : (
+                filteredLogs.slice(0, 30).map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-50 transition">
+                    <td className="py-2.5 px-4 font-mono text-[11px] text-slate-500">
+                      {log.recorded_at ? log.recorded_at.split('T')[0] : 'Today'}
+                    </td>
+                    <td className="py-2.5 px-4 font-semibold text-slate-900">
+                      {log.village_name || log.village_id}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-600 text-[11px]">
+                      {log.logged_by}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-medium text-emerald-700">
+                      {log.wet_waste_kg}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-medium text-blue-700">
+                      {log.dry_recyclable_kg}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-bold text-amber-700">
+                      {log.mlp_waste_kg}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-medium text-red-600">
+                      {log.sanitary_hazardous_kg}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          log.recorded_fill_percent >= 75
+                            ? 'bg-red-50 text-red-600'
+                            : 'bg-emerald-50 text-emerald-600'
+                        }`}
+                      >
+                        {log.recorded_fill_percent}%
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-right">
+                      <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        CLOUD SYNCED
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

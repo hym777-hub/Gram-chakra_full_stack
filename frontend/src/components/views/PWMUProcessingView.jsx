@@ -12,8 +12,8 @@
  *   Non-recyclable Multi-Layer Plastic (MLP) cannot be mechanically extruded into
  *   virgin-grade pellets. This view tracks the rural agglomeration and compression
  *   molding process that turns shredded MLP + sand/fly-ash into durable infrastructure:
- *   1. Paver Blocks: 1 kg MLP + 3 kg Sand -> 3 Paver Blocks
- *   2. Fencing Posts: 4 kg MLP + 8 kg Aggregate -> 1 Fencing Post
+ *   1. Paver Blocks: 1 kg MLP + 3 kg Sand -> 3 Paver Blocks (M30 Grade)
+ *   2. Fencing Posts: 4 kg MLP + 8 kg Mineral Aggregate -> 1 Fencing Post (6ft)
  *   3. Roof Tiles: 1.5 kg MLP + 2.5 kg Fly Ash -> 1 Interlocking Roof Tile
  * ============================================================================
  */
@@ -29,7 +29,10 @@ import {
   Play,
   RotateCw,
   TrendingUp,
-  Layers
+  Layers,
+  Sparkles,
+  ShieldCheck,
+  Award
 } from 'lucide-react';
 
 const RECIPES = {
@@ -39,7 +42,8 @@ const RECIPES = {
     aggregateMultiplier: 3.0,
     aggregateName: 'River Sand & Stone Dust',
     unitName: 'Pieces',
-    defaultUnitPrice: 45
+    defaultUnitPrice: 45,
+    spec: 'M30 Grade (30 N/mm²), Water Absorption <2%, IRC:SP:63-2018 Compliant'
   },
   FENCING_POST: {
     name: 'Reinforced 6ft Fencing Post',
@@ -47,7 +51,8 @@ const RECIPES = {
     aggregateMultiplier: 2.0,
     aggregateName: 'Crushed Mineral Aggregate',
     unitName: 'Posts',
-    defaultUnitPrice: 320
+    defaultUnitPrice: 320,
+    spec: 'Zero Termite/Rot, 100% Weatherproof, 25-Year Agricultural Service Life'
   },
   ROOF_TILE: {
     name: 'Interlocking Composite Roof Tile',
@@ -55,7 +60,8 @@ const RECIPES = {
     aggregateMultiplier: 1.67,
     aggregateName: 'Class-F Fly Ash / Slag',
     unitName: 'Tiles',
-    defaultUnitPrice: 180
+    defaultUnitPrice: 180,
+    spec: 'Thermal Insulation (K=0.15 W/mK), Class-1 Fire Retardant, UV Stabilized'
   }
 };
 
@@ -105,6 +111,13 @@ export default function PWMUProcessingView({ onBatchCreated = null }) {
   const estimatedAggregateKg = Math.round(mlpKg * activeRecipe.aggregateMultiplier);
   const expectedUnits = Math.floor(mlpKg / activeRecipe.mlpRatio);
   const estimatedSalesValuation = expectedUnits * activeRecipe.defaultUnitPrice;
+
+  // Preset batch sizes for quick demos
+  const setBatchPreset = (kg, kwh, labor) => {
+    setMlpInput(String(kg));
+    setElectricityKwh(String(kwh));
+    setLaborCost(String(labor));
+  };
 
   const handleCreateBatch = async (e) => {
     e.preventDefault();
@@ -212,6 +225,30 @@ export default function PWMUProcessingView({ onBatchCreated = null }) {
         </div>
       </div>
 
+      {/* Technical Specifications Highlights */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {Object.entries(RECIPES).map(([key, item]) => (
+          <div
+            key={key}
+            className={`p-4 rounded-xl border transition ${
+              productType === key
+                ? 'bg-indigo-50/70 border-indigo-300 ring-2 ring-indigo-500/20'
+                : 'bg-white border-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-900">{item.name}</span>
+              <Award className="h-4 w-4 text-indigo-600" />
+            </div>
+            <p className="text-[11px] text-slate-600 leading-relaxed mb-2">{item.spec}</p>
+            <div className="flex justify-between items-center text-[10px] text-slate-500 border-t pt-2 border-slate-100">
+              <span>Ratio: 1kg MLP : {item.aggregateMultiplier}kg Aggregate</span>
+              <strong className="text-indigo-700">₹{item.defaultUnitPrice} / {item.unitName}</strong>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {feedback && (
         <div
           className={`p-4 rounded-xl text-xs flex items-center space-x-2 border ${
@@ -279,10 +316,28 @@ export default function PWMUProcessingView({ onBatchCreated = null }) {
                 onChange={(e) => setMlpInput(e.target.value)}
                 className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 placeholder="e.g. 300"
+                required
               />
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                Max Available: {stockpile.available_stockpile_kg} kg
-              </span>
+              <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1">
+                <span>Available: {stockpile.available_stockpile_kg} kg</span>
+                <div className="space-x-1">
+                  <button
+                    type="button"
+                    onClick={() => setBatchPreset(150, 45, 1200)}
+                    className="text-indigo-600 hover:underline"
+                  >
+                    150kg
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => setBatchPreset(300, 90, 1800)}
+                    className="text-indigo-600 hover:underline"
+                  >
+                    300kg
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Electricity Consumption (kWh) */}
@@ -296,6 +351,7 @@ export default function PWMUProcessingView({ onBatchCreated = null }) {
                 value={electricityKwh}
                 onChange={(e) => setElectricityKwh(e.target.value)}
                 className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                required
               />
             </div>
           </div>
@@ -350,14 +406,15 @@ export default function PWMUProcessingView({ onBatchCreated = null }) {
 
         {/* Batches History Table */}
         <div className="border-t border-slate-200">
-          <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
+          <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
             <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
               Batch Conversion Audit Log ({batches.length} Records)
             </h4>
+            <span className="text-[11px] text-slate-500">Molding Press Log</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-80 overflow-y-auto">
             <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px]">
+              <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px] sticky top-0 z-10">
                 <tr>
                   <th className="py-2.5 px-6">Batch Code</th>
                   <th className="py-2.5 px-4">Date</th>
