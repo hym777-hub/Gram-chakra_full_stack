@@ -1,0 +1,12 @@
+{
+  "name": "gramchakra-root",
+  "version": "1.0.0",
+  "description": "GramChakra: Technical Solutions for Multi-Layer Plastic (MLP) Management at PWMU/MRF Level (SBM-G)",
+  "scripts": {
+    "dev:backend": "cd backend && node server.js",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "test:route": "cd backend && node test/routeTest.js",
+    "seed": "cd backend && node db/seed.js"
+  }
+}

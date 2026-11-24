@@ -1,0 +1,20 @@
+{
+  "name": "gramchakra-backend",
+  "version": "1.0.0",
+  "description": "Backend API service for GramChakra: SBM-G Multi-Layer Plastic (MLP) rural waste management, dynamic route optimization, and circular economy tracking.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node db/seed.js",
+    "test:route": "node test/routeTest.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.8.1"
+  }
+}
